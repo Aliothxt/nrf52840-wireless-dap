@@ -60,9 +60,31 @@ jobs:
           fi
 
       - name: Build firmware + UF2 (build.sh, default 240B/2Mbps/ch80)
+        id: build
+        continue-on-error: true
         run: |
           chmod +x build.sh
           CLI="$(command -v arduino-cli)" PYTHON=python3 ./build.sh
+
+      - name: Report build errors as annotations
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::Firmware build failed. See compile.log artifact."
+          if [ -f build/compile.log ]; then
+            grep -nE "error:|undefined reference|No such file" build/compile.log | head -30 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            tail -60 build/compile.log
+          fi
+          exit 1
+
+      - name: Upload compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log
+          path: build/compile.log
+          if-no-files-found: ignore
 
       - name: Show artifact and compare SHA256 with reference
         run: |

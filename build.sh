@@ -56,14 +56,20 @@ DAP128=0; DAP240=0
 FLAGS="-DWD_ESB=1 -DSERIAL_BUFFER_SIZE=1024 -DCFG_TUD_VENDOR_TX_BUFSIZE=${TXBUF} -DWD_USB_COMPAT=1 -DWD_V3_FIX=1 -DWD_ONE_ROW_RESET_P113_TEST=1 -DWD_COMPACT_WIRE_TEST=1 -DWD_LINK_RECOVERY_TEST=1 -DWD_SESSION_RESTART_TEST=1 -DWD_SOFT_RESET_VERIFY=1 -DWD_DAP_TRACE_CAPACITY=240 -DWD_RADIO_MBPS=${RADIO_MBPS} -DWD_RADIO_CHANNEL=${CHANNEL} -DWD_DAP128=${DAP128} -DWD_DAP240=${DAP240}"
 if [ "$FAST" -eq 1 ] || [ "$PACKET_BYTES" -eq 240 ]; then FLAGS="$FLAGS -DWD_SPEED_TEST=1"; fi
 
-"$CLI" compile --fqbn 'adafruit:nrf52:pca10056:softdevice=s140v6,debug=l0' \
+"$CLI" compile --verbose --fqbn 'adafruit:nrf52:pca10056:softdevice=s140v6,debug=l0' \
   --libraries "$ROOT/libraries" \
   --build-path "$BUILD" \
   --build-property "build.variant.path=$ROOT/variant" \
   --build-property "compiler.c.extra_flags=$FLAGS" \
   --build-property "compiler.cpp.extra_flags=$FLAGS" \
   --build-property 'compiler.c.elf.extra_flags=-Wl,--wrap=tud_cdc_line_state_cb' \
-  "$ROOT/unified_dap"
+  "$ROOT/unified_dap" 2>&1 | tee "$ROOT/build/compile.log"
+# tee hides the real exit status; recover it from the pipeline
+if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+  echo "===== COMPILE FAILED =====" >&2
+  grep -nE "error:|Error|undefined reference" "$ROOT/build/compile.log" | tail -40 >&2 || true
+  exit 1
+fi
 
 FW_NAME="uart_latency_packet${PACKET_BYTES}_unified_v3_p113_${RADIO_MBPS}m_fast_ch${CHANNEL}_afh_v2.uf2"
 FW="$OUT/$FW_NAME"
