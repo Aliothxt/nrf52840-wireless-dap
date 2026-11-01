@@ -51,6 +51,12 @@ jobs:
           arduino-cli core install adafruit:nrf52@1.7.0
           arduino-cli core list
 
+      - name: Install adafruit-nrfutil (required by core's post-build DFU hook)
+        run: |
+          pip install --upgrade pip
+          pip install adafruit-nrfutil
+          adafruit-nrfutil version
+
       - name: Verify source snapshot (report only, does not block)
         run: |
           if python3 tools/verify_source.py; then
