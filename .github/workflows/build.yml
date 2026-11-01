@@ -1,0 +1,97 @@
+name: Build Firmware
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Preserve repository byte content so the rebuild can be byte-exact.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install arduino-cli
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          arduino-cli version
+
+      - name: Cache Arduino cores
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+          key: arduino-adafruit-nrf52-1.7.0-v1
+
+      - name: Configure Arduino package index
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+          arduino-cli core update-index
+
+      - name: Install Adafruit nRF52 core 1.7.0
+        run: |
+          arduino-cli core install adafruit:nrf52@1.7.0
+          arduino-cli core list
+
+      - name: Verify source snapshot (report only, does not block)
+        run: |
+          if python3 tools/verify_source.py; then
+            echo "SOURCE_SNAPSHOT=matches-manifest" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "SOURCE_SNAPSHOT=differs-from-manifest (HEAD has newer commits; byte-exact rebuild of the reference UF2 is not expected)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build firmware + UF2 (build.sh, default 240B/2Mbps/ch80)
+        run: |
+          chmod +x build.sh
+          CLI="$(command -v arduino-cli)" PYTHON=python3 ./build.sh
+
+      - name: Show artifact and compare SHA256 with reference
+        run: |
+          FW="firmware/uart_latency_packet240_unified_v3_p113_2m_fast_ch80_afh_v2.uf2"
+          echo "Artifact: $FW"
+          ACTUAL=$(sha256sum "$FW" | awk '{print $1}')
+          echo "Actual  SHA256: $ACTUAL"
+          REF=$(python3 -c "import json;print(json.load(open('source-manifest.json'))['reference_firmware']['sha256'])")
+          echo "Reference SHA256: $REF"
+          if [ "$ACTUAL" = "$REF" ]; then
+            echo "RESULT: BYTE-EXACT MATCH with reference firmware"
+            echo "MATCH=true" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "RESULT: MISMATCH (build pipeline differs from reference, or toolchain version drift)"
+            echo "MATCH=false" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$ACTUAL" = "$REF" ]; then MATCH=YES; else MATCH=NO; fi
+          {
+            echo "### Firmware build"
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| actual SHA256 | $ACTUAL |"
+            echo "| reference SHA256 | $REF |"
+            echo "| match | **$MATCH** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload UF2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-uf2
+          path: firmware/*.uf2
+          if-no-files-found: error
