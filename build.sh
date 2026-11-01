@@ -47,6 +47,7 @@ fi
 BUILD="$ROOT/build"
 OUT="$ROOT/firmware"
 mkdir -p "$OUT"
+mkdir -p "$BUILD"
 
 if [ "$PACKET_BYTES" -eq 240 ]; then TXBUF=256; else TXBUF="$PACKET_BYTES"; fi
 DAP128=0; DAP240=0

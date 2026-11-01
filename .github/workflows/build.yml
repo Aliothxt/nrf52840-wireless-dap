@@ -69,12 +69,17 @@ jobs:
       - name: Report build errors as annotations
         if: steps.build.outcome == 'failure'
         run: |
-          echo "::error::Firmware build failed. See compile.log artifact."
+          echo "::error::Firmware build failed. Dumping compile.log tail as annotations."
           if [ -f build/compile.log ]; then
-            grep -nE "error:|undefined reference|No such file" build/compile.log | head -30 | while IFS= read -r line; do
-              echo "::error::$line"
+            # Emit the last 40 non-empty lines as annotations (readable via checks API).
+            tail -40 build/compile.log | tr -d '\r' | while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              # escape % and newlines per workflow-command rules
+              line="${line//'%'/'%25'}"
+              echo "::error::${line}"
             done
-            tail -60 build/compile.log
+          else
+            echo "::error::compile.log not found"
           fi
           exit 1
 
